@@ -54,15 +54,16 @@ const sketch = (p: p5) => {
 
   p.draw = () => {
     if (wandering && (performance.now() - actStarted) / 1000 > IDLE_SECONDS[act]) {
-      setAct(act === 0 ? 1 : 0, false);
+      setAct(act === 0 ? 1 : 0);
     }
 
+    const dt = Math.min(0.1, p.deltaTime / 1000);
     let features = calm;
     if (act === 2 && audio.active) {
       features = audio.getFeatures();
       drive.net.set(net.forward(audio.bands));
     } else if (act !== 2) {
-      const synthFeatures = synth.pump(Math.min(0.1, p.deltaTime / 1000), markov.regime);
+      const synthFeatures = synth.pump(dt, markov.regime);
       if (act === 1) features = synthFeatures;
     }
     net.update(markov.regime);
@@ -71,7 +72,7 @@ const sketch = (p: p5) => {
     drive.noise = lerp(drive.noise, target.noise, 0.03);
     drive.netAmt = lerp(drive.netAmt, target.net, 0.03);
 
-    markov.update(features);
+    markov.update(features, dt);
     renderer.draw(p, features, markov.regime, drive, net);
 
     if (printDensity) savePrint(p);
@@ -92,12 +93,12 @@ const sketch = (p: p5) => {
 
 // Act III needs a stream; asking for it is the way in.
 function chooseAct(next: Act) {
+  wandering = false;
   if (next === 2 && !audio.active) void listen(openDefault);
-  else setAct(next, true);
+  else setAct(next);
 }
 
-function setAct(next: Act, chosen: boolean) {
-  if (chosen) wandering = false;
+function setAct(next: Act) {
   act = next;
   actStarted = performance.now();
   if (next !== 1 && synth.audible) void toggleHear(false);
@@ -106,6 +107,7 @@ function setAct(next: Act, chosen: boolean) {
 }
 
 async function toggleHear(on = !synth.audible) {
+  if (on) wandering = false;
   await synth.setAudible(on);
   ui.hear.setAttribute('aria-pressed', String(synth.audible));
   ui.hear.textContent = synth.audible ? 'hush' : 'hear it';
@@ -115,6 +117,7 @@ const openDefault = canCaptureTab ? captureDisplayAudio : captureMonitor;
 
 async function listen(open: () => Promise<MediaStream | null>) {
   if (!canCaptureTab && !canMonitor) return;
+  wandering = false;
   note('');
   try {
     const next = await open();
@@ -127,7 +130,7 @@ async function listen(open: () => Promise<MediaStream | null>) {
     audio.attach(stream);
     stream.getAudioTracks()[0].addEventListener('ended', stopListening);
     document.body.classList.add('is-live');
-    setAct(2, true);
+    setAct(2);
   } catch (err) {
     const name = (err as Error).name;
     const message = (err as Error).message;
@@ -145,7 +148,7 @@ function stopListening() {
   audio.detach();
   document.body.classList.remove('is-live');
   note('stopped listening.');
-  setAct(1, true);
+  setAct(1);
 }
 
 function requestPrint(p: p5) {

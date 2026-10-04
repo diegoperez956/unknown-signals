@@ -40,16 +40,16 @@ export class MarkovEngine {
     };
   }
 
-  update(audio: AudioFeatures) {
-    this.step(audio);
+  update(audio: AudioFeatures, dt: number) {
+    this.step(audio, dt);
     const r = this.regime;
     r.params = paramsAt(r.primary, r.time);
     r.secondaryParams = r.secondary ? paramsAt(r.secondary, r.time) : null;
   }
 
-  private step(audio: AudioFeatures) {
+  private step(audio: AudioFeatures, dt: number) {
     // Louder passages push the parameters along faster.
-    this.regime.time += (1 + audio.volume * 3) / 60;
+    this.regime.time += dt * (1 + audio.volume * 3);
     this.regime.age++;
     if (this.transitionCooldown > 0) this.transitionCooldown--;
 
