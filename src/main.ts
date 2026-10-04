@@ -149,7 +149,7 @@ function stopListening() {
 }
 
 function requestPrint(p: p5) {
-  if (printDensity) return;
+  if (ui.print.disabled) return;
   // Render the next frame at 3x, save it, then drop back.
   ui.print.disabled = true;
   printDensity = p.pixelDensity();

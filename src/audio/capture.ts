@@ -49,15 +49,19 @@ export async function captureDisplayAudio(): Promise<MediaStream> {
 // cannot tell which output is in use, so every monitor is opened and mixed.
 export async function captureMonitor(): Promise<MediaStream | null> {
   let devices = await navigator.mediaDevices.enumerateDevices();
-  if (!devices.some((d) => d.kind === 'audioinput' && d.label)) {
-    const unlock = await navigator.mediaDevices.getUserMedia({ audio: true });
-    unlock.getTracks().forEach((t) => t.stop());
-    devices = await navigator.mediaDevices.enumerateDevices();
+  let unlock: MediaStream | undefined;
+  try {
+    if (!devices.some((d) => d.kind === 'audioinput' && d.label)) {
+      unlock = await navigator.mediaDevices.getUserMedia({ audio: true });
+      devices = await navigator.mediaDevices.enumerateDevices();
+    }
+    const monitors = devices.filter((d) => d.kind === 'audioinput' && /monitor of/i.test(d.label));
+    if (monitors.length === 0) return null;
+    const streams = await Promise.all(monitors.map((m) => navigator.mediaDevices.getUserMedia({
+      audio: { ...RAW_AUDIO, deviceId: { exact: m.deviceId } },
+    })));
+    return new MediaStream(streams.flatMap((s) => s.getAudioTracks()));
+  } finally {
+    unlock?.getTracks().forEach((t) => t.stop());
   }
-  const monitors = devices.filter((d) => d.kind === 'audioinput' && /monitor of/i.test(d.label));
-  if (monitors.length === 0) return null;
-  const streams = await Promise.all(monitors.map((m) => navigator.mediaDevices.getUserMedia({
-    audio: { ...RAW_AUDIO, deviceId: { exact: m.deviceId } },
-  })));
-  return new MediaStream(streams.flatMap((s) => s.getAudioTracks()));
 }
