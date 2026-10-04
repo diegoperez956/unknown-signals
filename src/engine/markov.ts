@@ -1,11 +1,7 @@
 import type { DistributionType, Regime, AudioFeatures } from '../types';
 import type { SeededRNG } from '../types';
 import { lerp } from '../utils';
-
-const ALL_DISTRIBUTIONS: DistributionType[] = [
-  'gaussian', 'uniform', 'poisson', 'exponential',
-  'beta', 'binomial', 'gamma', 'lognormal', 'pareto',
-];
+import { ALL_DISTRIBUTIONS, paramsAt } from './distributions';
 
 // Transition affinities: which distributions naturally flow into which
 // Higher values = more likely transition. This makes the state machine feel musical,
@@ -38,10 +34,22 @@ export class MarkovEngine {
       blend: 0,
       age: 0,
       stability: 0.7,
+      time: 0,
+      params: paramsAt('gaussian', 0),
+      secondaryParams: null,
     };
   }
 
-  update(audio: AudioFeatures) {
+  update(audio: AudioFeatures, dt: number) {
+    this.step(audio, dt);
+    const r = this.regime;
+    r.params = paramsAt(r.primary, r.time);
+    r.secondaryParams = r.secondary ? paramsAt(r.secondary, r.time) : null;
+  }
+
+  private step(audio: AudioFeatures, dt: number) {
+    // Louder passages push the parameters along faster.
+    this.regime.time += dt * (1 + audio.volume * 3);
     this.regime.age++;
     if (this.transitionCooldown > 0) this.transitionCooldown--;
 
@@ -72,21 +80,26 @@ export class MarkovEngine {
       this.blendTarget = 0.3 + this.rng.next() * 0.4; // blend 30-70%
     }
 
-    // If we've been blending for a while, maybe commit to the secondary
-    if (this.regime.secondary && this.regime.blend > 0.5 && this.regime.age > 360) {
+    // If we've been blending for a while, glide fully onto the secondary...
+    if (this.regime.secondary && this.regime.age > 360 && this.blendTarget < 1) {
       if (this.rng.next() < 0.005 || (audio.onset && this.rng.next() < 0.3)) {
-        this.regime.primary = this.regime.secondary;
-        this.regime.secondary = null;
-        this.regime.blend = 0;
-        this.blendTarget = 0;
-        this.regime.age = 0;
-        this.regime.stability = 0.6;
-        this.transitionCooldown = 60;
+        this.blendTarget = 1;
       }
     }
 
+    // ...and commit once the glide lands, so the curve never jumps.
+    if (this.regime.secondary && this.regime.blend > 0.97) {
+      this.regime.primary = this.regime.secondary;
+      this.regime.secondary = null;
+      this.regime.blend = 0;
+      this.blendTarget = 0;
+      this.regime.age = 0;
+      this.regime.stability = 0.6;
+      this.transitionCooldown = 60;
+    }
+
     // Energy-based: high sustained bass can force regime toward heavier distributions
-    if (audio.bass > 0.7 && this.regime.age > 120 && this.transitionCooldown <= 0) {
+    if (audio.bass > 0.7 && this.regime.age > 120 && this.transitionCooldown <= 0 && !this.regime.secondary) {
       if (this.rng.next() < 0.008) {
         this.regime.secondary = this.rng.next() < 0.5 ? 'gamma' : 'exponential';
         this.blendTarget = 0.5;
@@ -94,7 +107,7 @@ export class MarkovEngine {
     }
 
     // Quiet passage: drift toward calmer distributions
-    if (audio.volume < 0.1 && this.regime.age > 240 && this.transitionCooldown <= 0) {
+    if (audio.volume < 0.1 && this.regime.age > 240 && this.transitionCooldown <= 0 && !this.regime.secondary) {
       if (this.rng.next() < 0.005) {
         this.regime.secondary = this.rng.next() < 0.5 ? 'gaussian' : 'uniform';
         this.blendTarget = 0.4;

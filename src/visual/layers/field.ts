@@ -34,8 +34,8 @@ export class FieldLayer {
         const baseX = p.width * (0.08 + nx * 0.84);
         const baseY = p.height * (0.12 + ny * 0.72);
         const flow = p.noise(nx * 2.8 + frame * 0.0015, ny * 3.4 - frame * 0.0011, regime.age * 0.004);
-        const lateral = sample(regime.primary, rng) * p.width * 0.006 * (0.4 + params.displacement);
-        const vertical = sample(regime.secondary || regime.primary, rng) * p.height * 0.008 * (0.45 + params.displacement);
+        const lateral = sample(regime.primary, rng, regime.params) * p.width * 0.006 * (0.4 + params.displacement);
+        const vertical = sample(regime.primary, rng, regime.params) * p.height * 0.008 * (0.45 + params.displacement);
 
         this.offsetX[idx] = this.offsetX[idx] * 0.9 + ((flow - 0.5) * (18 + params.displacement * 24) + lateral) * 0.1;
         this.offsetY[idx] = this.offsetY[idx] * 0.88 + (

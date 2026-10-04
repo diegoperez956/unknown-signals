@@ -6,7 +6,7 @@ import { expDecay } from '../utils';
 export class AudioAnalyzer {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
-  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private sources: MediaStreamAudioSourceNode[] = [];
   private fftSize = 2048;
   private freqData = new Uint8Array(new ArrayBuffer(0));
   private timeData = new Uint8Array(new ArrayBuffer(0));
@@ -22,38 +22,42 @@ export class AudioAnalyzer {
   private onsetThreshold = 0.15;
   private smoothFlux = 0;
 
+  // Log-spaced band energies (40 Hz – 16 kHz), refreshed by getFeatures()
+  readonly bands = new Float32Array(16);
+
   active = false;
 
-  async start(): Promise<void> {
-    try {
-      // Request microphone — this captures whatever audio source the user routes
-      // (physical mic, virtual audio cable, or system loopback)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-      });
+  // Analyse a captured stream. Nothing is routed to the speakers: the computer is
+  // already playing it.
+  attach(stream: MediaStream) {
+    this.detach();
+    this.ctx = new AudioContext();
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = this.fftSize;
+    this.analyser.smoothingTimeConstant = 0.8;
 
-      this.ctx = new AudioContext();
-      this.analyser = this.ctx.createAnalyser();
-      this.analyser.fftSize = this.fftSize;
-      this.analyser.smoothingTimeConstant = 0.8;
-
-      this.sourceNode = this.ctx.createMediaStreamSource(stream);
-      this.sourceNode.connect(this.analyser);
-
-      const bufLen = this.analyser.frequencyBinCount;
-      this.freqData = new Uint8Array(new ArrayBuffer(bufLen));
-      this.timeData = new Uint8Array(new ArrayBuffer(this.fftSize));
-      this.prevSpectrum = new Float32Array(bufLen);
-
-      this.active = true;
-    } catch (err) {
-      console.error('Audio init failed:', err);
-      this.active = false;
+    // One source per track: a multi-track source would only play the first.
+    for (const track of stream.getAudioTracks()) {
+      const source = this.ctx.createMediaStreamSource(new MediaStream([track]));
+      source.connect(this.analyser);
+      this.sources.push(source);
     }
+
+    const bufLen = this.analyser.frequencyBinCount;
+    this.freqData = new Uint8Array(new ArrayBuffer(bufLen));
+    this.timeData = new Uint8Array(new ArrayBuffer(this.fftSize));
+    this.prevSpectrum = new Float32Array(bufLen);
+
+    this.active = true;
+  }
+
+  detach() {
+    this.active = false;
+    this.sources.forEach((s) => s.disconnect());
+    this.sources = [];
+    void this.ctx?.close();
+    this.ctx = null;
+    this.analyser = null;
   }
 
   // Extract all audio features for this frame
@@ -93,6 +97,16 @@ export class AudioAnalyzer {
     const rawBass = bassEnd > 0 ? bassSum / bassEnd : 0;
     const rawMid = (midEnd - bassEnd) > 0 ? midSum / (midEnd - bassEnd) : 0;
     const rawTreble = (trebleEnd - midEnd) > 0 ? trebleSum / (trebleEnd - midEnd) : 0;
+
+    // --- Log bands for the network ---
+    const n = this.bands.length;
+    for (let b = 0; b < n; b++) {
+      const lo = Math.max(1, Math.floor((40 * 400 ** (b / n)) / binHz));
+      const hi = Math.min(binCount, Math.max(lo + 1, Math.floor((40 * 400 ** ((b + 1) / n)) / binHz)));
+      let sum = 0;
+      for (let i = lo; i < hi; i++) sum += this.freqData[i];
+      this.bands[b] = hi > lo ? sum / (hi - lo) / 255 : 0;
+    }
 
     // Smooth with exponential decay
     const smoothing = 0.15;

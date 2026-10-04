@@ -1,4 +1,0 @@
-interface:
-  display_name: "Context Window Handoff"
-  short_description: "Compress active work into a fast resume note"
-  default_prompt: "Use $context-window-handoff to compress the current session into a concise Markdown handoff."

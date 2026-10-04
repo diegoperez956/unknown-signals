@@ -11,6 +11,8 @@ export type DistributionType =
   | 'lognormal'
   | 'pareto';
 
+export type DistParams = Record<string, number>;
+
 // Audio features extracted each frame
 export interface AudioFeatures {
   volume: number;       // 0–1 overall amplitude
@@ -29,6 +31,9 @@ export interface Regime {
   blend: number;           // 0–1 interpolation between primary/secondary
   age: number;             // frames since this regime started
   stability: number;       // 0–1 how resistant to transition
+  time: number;            // engine clock in seconds, drives parameter drift
+  params: DistParams;      // current parameters of primary
+  secondaryParams: DistParams | null;
 }
 
 // Visual behavior parameters derived from regime + audio
@@ -54,6 +59,13 @@ export interface VisualParams {
   bassWarp: number;        // structural compression from bass
   midMorph: number;        // shape tension from mids
   trebleFragmentation: number; // fine detail from highs
+}
+
+// How strongly each act's force shapes the plate (all 0–1, eased between acts)
+export interface PlateDrive {
+  noise: number;           // act II: displacement from sampled noise / live features
+  net: Float32Array;       // act III: network outputs (-1..1), spread across the plate
+  netAmt: number;
 }
 
 // Seeded RNG state

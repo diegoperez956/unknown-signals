@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "node src/engine/distributions.check.ts"
   },
   "dependencies": {
     "@types/p5": "^1.7.7",
