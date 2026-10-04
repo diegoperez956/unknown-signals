@@ -57,9 +57,15 @@ export async function captureMonitor(): Promise<MediaStream | null> {
     }
     const monitors = devices.filter((d) => d.kind === 'audioinput' && /monitor of/i.test(d.label));
     if (monitors.length === 0) return null;
-    const streams = await Promise.all(monitors.map((m) => navigator.mediaDevices.getUserMedia({
+    const opened = await Promise.allSettled(monitors.map((m) => navigator.mediaDevices.getUserMedia({
       audio: { ...RAW_AUDIO, deviceId: { exact: m.deviceId } },
     })));
+    const streams = opened.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+    const failed = opened.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failed) {
+      streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+      throw failed.reason;
+    }
     return new MediaStream(streams.flatMap((s) => s.getAudioTracks()));
   } finally {
     unlock?.getTracks().forEach((t) => t.stop());
