@@ -1,22 +1,21 @@
 import p5 from 'p5';
-import type { AudioFeatures, Regime, VisualParams } from '../types';
+import type { AudioFeatures, PlateDrive, Regime, VisualParams } from '../types';
 import { getDistributionCharacter } from '../engine/distributions';
+import type { TinyNet } from '../engine/network';
 import { SeedManager } from '../engine/seeds';
 import { lerp } from '../utils';
 import { BackdropLayer } from './layers/backdrop';
 import { FieldLayer } from './layers/field';
-import { DensityLayer } from './layers/density';
-import { RidgelineLayer } from './layers/ridgelines';
+import { RidgelineLayer, plateGeometry } from './layers/ridgelines';
 import { ParticleLayer } from './layers/particles';
+import { drawNetwork } from './layers/network';
 
-// Light mathematical gallery aesthetic inspired by profConradi:
-// warm parchment background, dark ink-like strokes, attractor traces,
-// contour ridgelines. Like an animated scientific illustration.
+// Dark plotting room: graphite ground, bone ink, rust and steel-blue accents.
+// The plate of ridges is the subject; everything else is instrument furniture.
 
 export class Renderer {
   private backdrop = new BackdropLayer();
   private field = new FieldLayer();
-  private density = new DensityLayer();
   private ridges = new RidgelineLayer();
   private particles = new ParticleLayer();
   private seeds: SeedManager;
@@ -31,7 +30,6 @@ export class Renderer {
   init(p: p5) {
     this.backdrop.init(p);
     this.field.init(p);
-    this.density.init(p);
     this.ridges.init(p);
     this.particles.init(p);
   }
@@ -40,31 +38,29 @@ export class Renderer {
     this.init(p);
   }
 
-  draw(p: p5, audio: AudioFeatures, regime: Regime) {
+  draw(p: p5, audio: AudioFeatures, regime: Regime, drive: PlateDrive, net: TinyNet) {
     this.frame++;
 
     const targetParams = this.computeParams(regime, audio);
     this.smoothParams(targetParams);
     const params = this.currentParams;
 
-    // Layer order: backdrop -> field lattice -> density wash -> ridgelines -> particles -> accent marks
+    const plate = plateGeometry(p);
+
+    // Layer order: backdrop -> field lattice -> ridgelines -> particles -> network -> accent marks
     this.backdrop.draw(p, params, audio, regime, this.seeds.stream('backdrop'), this.frame);
 
     p.push();
     this.field.draw(p, params, audio, regime, this.seeds.stream('field'), this.frame);
     p.pop();
 
-    p.push();
-    this.density.draw(p, params, audio, regime, this.seeds.stream('density'), this.frame);
-    p.pop();
+    this.ridges.draw(p, params, audio, regime, this.seeds.stream('ridges'), this.frame, drive);
 
     p.push();
-    this.ridges.draw(p, params, audio, regime, this.seeds.stream('ridges'), this.frame);
+    this.particles.draw(p, params, audio, regime, this.seeds.stream('particles'), this.frame, drive, plate);
     p.pop();
 
-    p.push();
-    this.particles.draw(p, params, audio, regime, this.seeds.stream('particles'), this.frame);
-    p.pop();
+    drawNetwork(p, net, drive.netAmt, plate);
 
     this.drawAccentMarks(p, audio, params);
   }
@@ -183,10 +179,5 @@ export class Renderer {
       midMorph: 0,
       trebleFragmentation: 0,
     };
-  }
-
-  getDebugInfo(regime: Regime, audio: AudioFeatures): string {
-    const secondary = regime.secondary ? ` / ${regime.secondary} (${(regime.blend * 100).toFixed(0)}%)` : '';
-    return `${regime.primary}${secondary} | age:${regime.age} stab:${regime.stability.toFixed(2)} | vol:${audio.volume.toFixed(2)} bass:${audio.bass.toFixed(2)} mid:${audio.mid.toFixed(2)} hi:${audio.treble.toFixed(2)}`;
   }
 }

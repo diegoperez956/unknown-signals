@@ -1,121 +1,40 @@
 # Unknown Signals
 
-Unknown Signals is a browser-based music visualizer built with Vite, TypeScript, p5.js, and the Web Audio API. Live audio does not drive a generic spectrum display here; it pushes a small probabilistic system that keeps changing its own drawing logic over time.
+Three studies in probability, drawn as a dark plotting-room plate of contour ridges.
 
-The current pass intentionally moved away from the earlier pastel glass/prism look. The app now behaves more like a dark plotting-room instrument: contour stacks, warped lattice lines, sparse sparks, and editorial overlays that feel closer to mathematical art than to a polished consumer UI.
+Live at https://diegoperez956.github.io/unknown-signals/
 
-## Revised Design Prompt
+## The piece
 
-Build a fullscreen visualizer that feels like:
+1. **Silence.** The distributions themselves: gaussian, uniform, poisson, exponential, beta, binomial, gamma, lognormal, pareto. Each ridge is the live density of the current regime, and each one further back shows it 1.2 s earlier, so the stack is a history of the parameters drifting. A Markov regime switcher glides from one distribution to the next.
+2. **Noise.** Sound made only from samples of those distributions: Poisson-timed sine grains whose pitch and loudness are draws, over a bed of per-sample draws. It shakes the plate, and particles drawn from the curves rise into the ridges. Silent by default; **hear it** plays it.
+3. **This computer.** Whatever the computer is playing goes through a tiny hand-written network (16 → 10 → 8 → 8, tanh), drawn above the plate. Its weights are samples from the current distribution and re-draw as the regime moves. The outputs bend the plate.
 
-- a scientific plate waking up under live sound
-- a field notebook for stochastic systems
-- computational printmaking with motion
-- topographic contours, ghost traces, and instrument marks
-- restrained, intelligent graphics instead of glossy faux-3D effects
+The corner readout shows the live law, e.g. `x ~ gamma(k=2.30, θ=0.80) → noise → ridge displacement`. **Print** (or `p`) saves the current frame as a 3x PNG. Keys `1` `2` `3` switch acts. Left alone, the piece drifts between silence and noise.
 
-Use a Markov-like regime switcher over real probability distributions so that:
+## Listening
 
-- bass compresses and bends the terrain
-- mids shear the lattice and contour bodies
-- treble seeds sparks, fragmentation, and fine perturbation
-- onsets can push the system into more dramatic regimes
+The only input is what the computer is playing. No microphone, no file drop.
 
-Keep the interface lean:
+- **Desktop Chrome / Edge:** "listen to this computer" opens the share picker. Pick a tab and keep "share tab audio" ticked (on Windows and ChromeOS you can share the entire screen with system audio).
+- **Firefox on Linux:** the same button opens every PipeWire / PulseAudio "Monitor of …" input, which is true system audio. Chrome filters those devices out, so it uses tab sharing instead.
+- **Safari, other Firefox, phones:** no audio capture; the first two acts still run.
 
-- one fullscreen canvas
-- one start control for microphone permissions
-- one lightweight metadata overlay
-- optional telemetry with the `D` key
+## Run it
 
-## Visual Direction
-
-This version leans on:
-
-- dark graphite, bone, rust, and steel-blue instead of aqua glass gradients
-- contour ridges as the primary visual mass
-- a warped coordinate lattice instead of low-poly filled geometry
-- sparse particle traces instead of floating prisms
-- editorial typography and technical labels instead of generic UI chrome
-
-## Research Notes
-
-The redesign was informed by studying public repos from [profConradi](https://github.com/profConradi):
-
-- [profConradi.github.io](https://github.com/profConradi/profConradi.github.io) for the restrained editorial palette and serif-plus-mono frontend treatment
-- [gallery metadata from the site](https://raw.githubusercontent.com/profConradi/profConradi.github.io/main/content/gallery.json) for the thematic direction: eigenvalues, sandpiles, fog, orbits, plankton, broken symmetry
-- [MathArt](https://github.com/profConradi/MathArt), [Fractals](https://github.com/profConradi/Fractals), and [ALife](https://github.com/profConradi/ALife) for the broader computational-art / simulation context
-- [scriba.html](https://raw.githubusercontent.com/profConradi/scriba/main/scriba.html) for another example of his understated frontend styling
-
-This project does not copy any of those works directly. It borrows the stronger shared cues: mathematical subject matter, restrained typography, and graphics that feel authored rather than flashy.
-
-## System Overview
-
-Core modules:
-
-- `src/audio` extracts volume, bass, mids, treble, onset, spectral centroid, and spectral flux
-- `src/engine/distributions.ts` contains the distribution samplers and visual-character mapping
-- `src/engine/markov.ts` handles regime persistence, blends, and abrupt transitions
-- `src/visual/renderer.ts` composes the scene
-- `src/visual/layers` contains the background, lattice, density bands, ridgelines, and particles
-
-Current layer stack:
-
-1. Backdrop: dark gradient, wash, plotting grid, dust, and ring marks
-2. Field: warped coordinate lattice
-3. Density: contour bands under the main ridges
-4. Ridgelines: the main topographic signal body
-5. Particles: sparse sparks and ghost traces
-
-## Distribution Mapping
-
-- `gaussian`: centered, smooth displacement and tighter contour bodies
-- `uniform`: flatter spread and calmer, more democratic spacing
-- `poisson`: burstier events and more abrupt mark-making
-- `exponential`: decay-heavy motion with quick falloff
-- `beta`: asymmetry and edge-biased motion
-- `binomial`: quantized, step-like snapping
-- `gamma`: delayed surges and rolling shifts
-- `lognormal`: occasional longer reaches in the motion field
-- `pareto`: rare dramatic outliers and heavier visual shocks
-
-## Local Development
-
-```bash
+```sh
 npm install
-npm run dev
+npm run dev     # http://localhost:5173/unknown-signals/
+npm run build   # typecheck + production build into dist/
+npm run check   # densities integrate to 1, samplers match their moments
 ```
 
-Build for production:
+Pushing to `main` deploys to GitHub Pages via `.github/workflows/deploy.yml`.
 
-```bash
-npm run build
-```
+## Code
 
-## Audio Notes
-
-- Browsers do not give reliable true system-audio capture in a plain web app, so this version uses microphone input via `getUserMedia`.
-- If you need desktop audio, route it into the browser with a virtual audio device or loopback input.
-- Before permissions are granted, the app uses simulated features so the scene still previews motion.
-
-## Files Worth Tweaking
-
-- `src/main.ts` for overlay copy and start-flow behavior
-- `src/styles.css` for typography, palette, and HUD styling
-- `src/visual/renderer.ts` for layer ordering and global accents
-- `src/visual/layers/ridgelines.ts` for the main terrain character
-- `src/visual/layers/field.ts` for the lattice motion
-
-## Self-Critique
-
-What improved in this pass:
-
-- the scene has a much clearer point of view than the earlier glassy composition
-- the UI and canvas now belong to the same visual world
-- the motion reads more like technical art than decorative floating objects
-
-What still needs eyeballing in a browser:
-
-- the exact balance between contour density and particle count
-- microphone responsiveness across different devices and browsers
-- whether the overlay should stay as visible once live input begins
+- `src/engine/distributions.ts`: densities, samplers, moments, parameter drift
+- `src/engine/markov.ts`: regime switching and blending
+- `src/engine/network.ts`: the tiny net
+- `src/audio/synth.ts`: act II noise; `src/audio/analyzer.ts`, `src/audio/capture.ts`: act III input
+- `src/visual/`: backdrop, lattice, ridges, particles, network diagram

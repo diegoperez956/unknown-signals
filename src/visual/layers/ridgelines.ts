@@ -1,112 +1,134 @@
 import p5 from 'p5';
-import type { AudioFeatures, Regime, SeededRNG, VisualParams } from '../../types';
-import { sample } from '../../engine/distributions';
+import type { AudioFeatures, PlateDrive, Regime, SeededRNG, VisualParams } from '../../types';
+import { paramsAt, profile, sample } from '../../engine/distributions';
 
-const NUM_LINES = 54;
-const POINTS_PER_LINE = 180;
+const NUM_LINES = 40;
+const POINTS_PER_LINE = 160;
+// Each ridge back from the front shows the density this many seconds earlier.
+const LAG_PER_LINE = 1.2;
 
-interface RidgeLine {
-  baseY: number;
-  phase: number;
-  offsets: Float32Array;
+export interface PlateGeometry {
+  left: number;
+  width: number;
+  top: number;
+  bottom: number;
+  peak: number;
 }
 
+export function plateGeometry(p: p5): PlateGeometry {
+  const left = p.width * 0.08;
+  const top = p.height * 0.3;
+  const bottom = p.height * 0.86;
+  return { left, width: p.width - left * 2, top, bottom, peak: ((bottom - top) / NUM_LINES) * 11 };
+}
+
+// The plate: a stack of ridges, each one the live density of the current regime.
+// Act II adds displacement from sampled noise, act III from the network's outputs.
 export class RidgelineLayer {
-  private lines: RidgeLine[] = [];
+  private offsets: Float32Array[] = [];
   private prevFrame: Float32Array[] = [];
+  private shapeA = new Float32Array(POINTS_PER_LINE);
+  private shapeB = new Float32Array(POINTS_PER_LINE);
+  private ys = new Float32Array(POINTS_PER_LINE);
 
-  init(p: p5) {
-    this.lines = [];
-    this.prevFrame = [];
-
-    const spacing = p.height / (NUM_LINES + 8);
-    for (let i = 0; i < NUM_LINES; i++) {
-      this.lines.push({
-        baseY: spacing * (i + 3),
-        phase: (i / NUM_LINES) * Math.PI * 2,
-        offsets: new Float32Array(POINTS_PER_LINE),
-      });
-      this.prevFrame.push(new Float32Array(POINTS_PER_LINE));
-    }
+  init(_p: p5) {
+    this.offsets = Array.from({ length: NUM_LINES }, () => new Float32Array(POINTS_PER_LINE));
+    this.prevFrame = Array.from({ length: NUM_LINES }, () => new Float32Array(POINTS_PER_LINE));
   }
 
-  draw(p: p5, params: VisualParams, audio: AudioFeatures, regime: Regime, rng: SeededRNG, frame: number) {
-    const width = p.width;
-    const height = p.height;
-    const spacing = height / (NUM_LINES + 8);
-    const verticalWarp = 1 + params.bassWarp * 0.34;
+  draw(
+    p: p5,
+    params: VisualParams,
+    audio: AudioFeatures,
+    regime: Regime,
+    rng: SeededRNG,
+    frame: number,
+    drive: PlateDrive,
+  ) {
+    const ctx = p.drawingContext as CanvasRenderingContext2D;
+    const { left, width, top, bottom, peak } = plateGeometry(p);
+    const spacing = (bottom - top) / (NUM_LINES - 1);
     const displacementScale = 22 + params.displacement * 74 + params.midMorph * 44;
     const jitterScale = params.jitter * 6 + params.trebleFragmentation * 9;
-    const margin = width * 0.07;
-    const drawWidth = width - margin * 2;
+    const net = drive.net;
+    const ghostAlpha = (0.03 + params.decay * 0.08) * drive.noise;
 
     for (let i = 0; i < NUM_LINES; i++) {
-      const line = this.lines[i];
-      const lineProgress = i / Math.max(1, NUM_LINES - 1);
-      line.baseY = height * 0.28 + spacing * i * verticalWarp;
-      line.baseY += Math.sin(frame * 0.006 + line.phase) * spacing * 0.12;
+      let drawn = 0;
+      const lineProgress = i / (NUM_LINES - 1);
+      const time = regime.time - (NUM_LINES - 1 - i) * LAG_PER_LINE;
+      const shape = profile(regime.primary, paramsAt(regime.primary, time), this.shapeA);
+      if (regime.secondary) {
+        const other = profile(regime.secondary, paramsAt(regime.secondary, time), this.shapeB);
+        for (let j = 0; j < POINTS_PER_LINE; j++) {
+          shape[j] += (other[j] - shape[j]) * regime.blend;
+        }
+      }
 
-      const points: number[] = [];
+      const baseY = top + spacing * i * (1 + params.bassWarp * 0.06 * drive.noise)
+        + Math.sin(frame * 0.006 + lineProgress * Math.PI * 2) * spacing * 0.12;
+      const offsets = this.offsets[i];
 
       for (let j = 0; j < POINTS_PER_LINE; j++) {
         const t = j / (POINTS_PER_LINE - 1);
-        const x = margin + t * drawWidth;
+        const density = shape[j];
+        let y = baseY - density * peak;
 
-        const primary = sample(regime.primary, rng);
-        const secondary = regime.secondary ? sample(regime.secondary, rng) : primary;
-        const blendedSample = primary * (1 - regime.blend) + secondary * regime.blend;
-
-        const noiseVal = p.noise(
-          t * 3.2 + frame * 0.0024,
-          lineProgress * 5 + frame * 0.0018,
-          frame * 0.0008,
-        );
-
-        const envelope = Math.sin(t * Math.PI) ** 1.85;
-        const displacement = (
-          (noiseVal - 0.45) * 0.8
-          + blendedSample * 0.16 * (1 + audio.volume * 2.2)
-        ) * displacementScale * envelope;
-
-        const jitter = (rng.next() - 0.5) * jitterScale * (0.4 + audio.treble * 2.8);
-        line.offsets[j] = line.offsets[j] * (0.88 + params.decay * 0.08) + displacement * 0.08;
-
-        const y = line.baseY - displacement - line.offsets[j] * 0.34 + jitter;
-        points.push(x, y);
-      }
-
-      if (this.prevFrame[i]) {
-        p.push();
-        p.noFill();
-        p.stroke(213, 117, 75, 8 + params.decay * 20);
-        p.strokeWeight(0.5);
-        p.beginShape();
-        for (let j = 0; j < POINTS_PER_LINE; j++) {
-          p.vertex(margin + (j / (POINTS_PER_LINE - 1)) * drawWidth, this.prevFrame[i][j]);
+        if (drive.noise > 0.001) {
+          const noiseVal = p.noise(t * 3.2 + frame * 0.0024, lineProgress * 5 + frame * 0.0018, frame * 0.0008);
+          const envelope = Math.sin(t * Math.PI) ** 1.85;
+          // Neighbouring points share some of each draw, so it reads as a waveform.
+          drawn = drawn * 0.45 + sample(regime.primary, rng, regime.params) * 0.55;
+          // Noise lives mostly inside the curve: it fills the distribution.
+          const displacement = ((noiseVal - 0.45) * 0.8 + drawn * 0.16 * (1 + audio.volume * 2.2))
+            * displacementScale * envelope * (0.25 + density) * drive.noise;
+          offsets[j] = offsets[j] * (0.88 + params.decay * 0.08) + displacement * 0.08;
+          y -= displacement + offsets[j] * 0.34;
+          y += (rng.next() - 0.5) * jitterScale * (0.4 + audio.treble * 2.8) * drive.noise;
         }
-        p.endShape();
-        p.pop();
+
+        if (drive.netAmt > 0.001) {
+          const k = t * (net.length - 1);
+          const k0 = Math.floor(k);
+          const v = net[k0] + (net[Math.min(net.length - 1, k0 + 1)] - net[k0]) * (k - k0);
+          y -= v * (0.2 + density) * peak * 0.6 * drive.netAmt;
+        }
+
+        this.ys[j] = y;
       }
 
-      p.push();
-      p.noFill();
-      p.stroke(
-        224 + lineProgress * 22,
-        208 - lineProgress * 18 + audio.mid * 12,
-        182 - lineProgress * 34 + (params.extremeEvent ? 18 : 0),
-        34 + lineProgress * 100 + audio.volume * 56,
-      );
-      p.strokeWeight(0.55 + lineProgress * 0.74 + audio.mid * 0.75);
+      const xAt = (j: number) => left + (j / (POINTS_PER_LINE - 1)) * width;
 
-      p.beginShape();
-      for (let j = 0; j < POINTS_PER_LINE; j++) {
-        const x = points[j * 2];
-        const y = points[j * 2 + 1];
-        p.vertex(x, y);
-        this.prevFrame[i][j] = y;
+      // Ghost of the previous frame, in rust
+      if (ghostAlpha > 0.004) {
+        const prev = this.prevFrame[i];
+        ctx.beginPath();
+        for (let j = 0; j < POINTS_PER_LINE; j++) ctx.lineTo(xAt(j), prev[j]);
+        ctx.strokeStyle = `rgba(213, 117, 75, ${ghostAlpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
       }
-      p.endShape();
-      p.pop();
+
+      // Occlude the ridges behind, then ink this one
+      ctx.beginPath();
+      for (let j = 0; j < POINTS_PER_LINE; j++) ctx.lineTo(xAt(j), this.ys[j]);
+      ctx.lineTo(left + width, baseY);
+      ctx.lineTo(left, baseY);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(11, 14, 21, 0.78)';
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let j = 0; j < POINTS_PER_LINE; j++) ctx.lineTo(xAt(j), this.ys[j]);
+      const r = 224 + lineProgress * 22;
+      const g = 208 - lineProgress * 18 + audio.mid * 12;
+      const b = 182 - lineProgress * 34 + (params.extremeEvent ? 18 : 0);
+      const a = (40 + lineProgress * 130 + audio.volume * 56) / 255;
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(1, a)})`;
+      ctx.lineWidth = 0.6 + lineProgress * 0.8 + audio.mid * 0.75;
+      ctx.stroke();
+
+      this.prevFrame[i].set(this.ys);
     }
   }
 }
