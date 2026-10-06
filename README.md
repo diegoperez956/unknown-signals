@@ -2,7 +2,7 @@
 
 Three studies in probability, drawn as a dark plotting-room plate of contour ridges.
 
-Live at https://diegoperez956.github.io/unknown-signals/
+Live at https://papayuh.github.io/unknown-signals/
 
 ## The piece
 
